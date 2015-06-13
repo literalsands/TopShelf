@@ -17,6 +17,7 @@
   "dependencies": {
     "async": "^1.2.1",
     "battlenet-api": "^0.8.4",
+    "bcrypt-as-promised": "^1.0.1",
     "bcrypt-nodejs": "0.0.3",
     "bcryptjs": "^2.1.0",
     "body-parser": "^1.12.4",
@@ -59,7 +60,8 @@
     "thinky": "^2.0.5",
     "url": "^0.10.3",
     "util": "^0.10.3",
-    "validator": "^3.40.0"
+    "validator": "^3.40.0",
+    "when": "^3.7.3"
   },
   "devDependencies": {
     "autoprefixer-core": "^5.2.0",

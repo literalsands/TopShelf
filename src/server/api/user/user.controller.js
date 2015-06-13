@@ -1,89 +1,151 @@
 'use strict';
+var debug = require('debug')('tsg:User'),
+User = require('./user.model'),
+thinky = require('../../config/thinky'),
+//jwt  = require('jwt-simple'),
+moment = require('moment'),
+bcrypt = require('bcrypt-nodejs'),
+c = require('chalk'),
+auth = require('../../auth/auth.service'),
+config = require('../../config/environment'),
+jwt = require('jsonwebtoken');
 
-var User = require('./user.model');
-var passport = require('passport');
-var config = require('../../config/environment');
-var jwt = require('jsonwebtoken');
-
-var validationError = function(res, err) {
-  return res.json(422, err);
-};
-
+// Keep reference to RethinkDB's driver
+var r = thinky.r;
 /**
  * Get list of users
  * restriction: 'admin'
  */
 exports.index = function(req, res) {
-  User.find({}, '-salt -hashedPassword', function (err, users) {
+  User.run().then(function (users) {
     if (err) return res.status(500).json(err);
     res.status(200).json(users);
   });
-};
+ }
 
 /**
- * Creates a new user
+ * Creates a new user from a username and password.
+ *
+ * @param {Object} the request to our server
+ * @param {response} the response to the client
+ * @api public
  */
-exports.create = function (req, res, next) {
-  var newUser = new User(req.body);
-  newUser.provider = 'local';
-  newUser.role = 'user';
-  newUser.save(function(err, user) {
-    if (err) return validationError(res, err);
-    var token = jwt.sign({_id: user._id}, config.session.secret, {
-      expiresInMinutes: 60 * 5
+exports.signupUser = function(req, res) {
+  // Create new instance of 'User' model
+  var user = new User({
+    username: req.body.username,
+    password: req.body.password,
+    email: req.body.email,
+    role: 'registered'
+  });
+
+  // Save the person and check for errors kind-of. It'll also call `save`'s `pre` hook
+  user.save(function(err, doc) {
+  if (err) {
+    res.status(403).json({
+      error: 'Username already taken. Choose a different username.'
     });
+    console.log(c.red('Error: ') + err);
+
+  } else {
+    // Create a token that expires 7 days from now
+    var expires = moment().add(4200, 'minutes').valueOf();
+
+    var payload = {
+      sub: user.id,
+      iss: user.username,
+      role: user.role,
+      iat: moment().unix(),
+      exp: moment().add(4200, 'minutes').unix()
+    };
+    var token = jwt.sign(payload, config.session.secret);
+
+    // Issue the token in the response
     res.json({token: token});
+  }});
+};
+
+/**
+ * Login Route
+ *
+ * @param {Object} the request sent to our server
+ * @param {Object} the response sent back to the client.
+ * Includes a valid JSON web token
+ * @api public
+ */
+exports.loginUser = function(req, res) {
+  // Start by finding the username
+  User.get(req.body.username).run().then(function(user) {
+    console.log(c.green('\nFound user: ') + req.body.username);
+
+    // Compare the password here with the password in the database
+    bcrypt.compare(req.body.password, user.password, function(err, res) {
+      console.log(c.red('Errors: ') + err);
+      console.log(c.blue('Password matched: ') + res);
+    });
+
+   // Create a token that expires 7 days from now
+    var expires = moment().add(4200, 'minutes').valueOf();
+
+    var payload = {
+      sub: user.id,
+      iss: user.username,
+      role: user.role,
+      iat: moment().unix(),
+      exp: moment().add(4200, 'minutes').unix()
+    };
+    var token = jwt.sign(payload, config.session.secret);
+
+    // Issue the token in the response
+    res.json({token: token});
+
+  }).error(function(err) {
+    console.log(c.red('\nError: could not find user with username: ') + req.body.username);
+
+    // @TODO: This is where you need to setup the logic to suggest that new users sign up.
+    console.log(c.yellow('Maybe you should create an account?'));
+    res.status(404).json({message: err});
   });
 };
 
 /**
- * Get a single user
+ * Delete a user's account.
+ *
+ * @param {Object} the request sent to our server
+ * @param {Object} the response sent back to the client
+ * @api public
  */
-exports.show = function (req, res, next) {
-  var userId = req.params.id;
 
-  User.findById(userId, function (err, user) {
-    if (err) return next(err);
-    if (!user) return res.sendStatus(401);
-    res.json(user.profile);
+exports.deleteUser = function(req, res) {
+  // Get the username from the token
+  var user = token.decode(req);
+
+  User.get(user.iss).delete().execute().then(function(result) {
+    res.json(result);
+  }).error(function(err) {
+    res.json({
+      message: 'Error when trying to delete user',
+      err: err
+    });
   });
 };
-
 /**
- * Deletes a user
- * restriction: 'admin'
+ * Get a user by id.
+ *
+ * @param {Object} the request sent to our server
+ * @param {Object} the response sent back to the client
+ * @api public
  */
-exports.destroy = function(req, res) {
-  User.findByIdAndRemove(req.params.id, function(err, user) {
-    if (err) return res.status(500).json(err);
-    return res.sendStatus(204);
-  });
-};
 
-/**
- * Change a users password
- */
-exports.changePassword = function(req, res, next) {
-  var userId = req.user._id;
-  var oldPass = String(req.body.oldPassword);
-  var newPass = String(req.body.newPassword);
-
-  User.findById(userId, function (err, user) {
-    if (user.authenticate(oldPass)) {
-      user.password = newPass;
-      user.save(function(err) {
-        if (err) return validationError(res, err);
-        res.sendStatus(200);
-      });
-    } else {
-      res.sendStatus(403);
-    }
+exports.showUser = function (req, res) {
+  User.get(req.params.id).run().then(function(user) {
+    res.json(user);
   });
 };
 
 /**
  * Get my info
- */
+
 exports.me = function(req, res, next) {
   var userId = req.user._id;
   User.findOne({
@@ -93,68 +155,8 @@ exports.me = function(req, res, next) {
     if (!user) return res.json(401);
     res.json(user);
   });
-};
-
-exports.editMe = function (req, res) {
-  var oldPass = req.body.oldPassword ? String(req.body.oldPassword) : null;
-  var newPass = req.body.newPassword ? String(req.body.newPassword) : null;
-
-  User.findById(req.user, '+password', function (err, user) {
-    if (!user) {
-      return res.status(400).send({
-        message: 'User not found'
-      });
-    }
-    user.displayName = req.body.displayName || user.displayName;
-    user.email = req.body.email || user.email;
-    if (newPass) {
-      user.password = newPass;
-    }
-    // Users with local authentication require password.
-    if (user.providers.indexOf('local') !== -1) {
-      user.comparePassword(oldPass, function (isMatch) {
-        console.log(arguments);
-        if (!isMatch) {
-          return res.status(401).send({
-            message: 'Wrong password'
-          });
-        }
-        user.save(function () {
-          if (err) {
-            validationError(res, err);
-          }
-          res.status(200).end();
-        });
-      });
-    } else {
-      if (newPass) {
-        user.providers.push('local');
-      }
-      user.save(function () {
-        if (err) {
-          validationError(res, err);
-        }
-        res.status(200).end();
-      });
-    }
-  });
-};
-
-exports.list = function (req, res) {
-  User.find({}, function (err, users) {
-    var userArr = [];
-
-    users.forEach(function (user) {
-      userArr.push(user);
-    });
-
-    res.send(userArr);
-  });
-};
+}; */
 
 /**
  * Authentication callback
  */
-exports.authCallback = function(req, res, next) {
-  res.redirect('/');
-};

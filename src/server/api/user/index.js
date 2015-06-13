@@ -6,13 +6,12 @@ var express    = require('express'),
     router     = express.Router();
 
 //router.get('/me', auth.isAuthenticated, controller.getMe);
-router.put('/me', auth.isAuthenticated, controller.editMe);
-router.get('/list', controller.list);
-router.get('/', auth.hasRole('admin'), controller.index);
-router.delete('/:id', auth.hasRole('admin'), controller.destroy);
-router.get('/me', auth.isAuthenticated(), controller.me);
-router.put('/:id/password', auth.isAuthenticated(), controller.changePassword);
-router.get('/:id', auth.isAuthenticated(), controller.show);
-router.post('/', controller.create);
+//router.put('/me', auth.isAuthenticated, controller.editMe);
+router.get('/', controller.index);
+router.post('/login', controller.loginUser);
+router.delete('/:id', controller.deleteUser);
+//router.get('/me', auth.isAuthenticated(), controller.me);
+router.get('/:id', auth.isAuthenticated(), controller.showUser);
+router.post('/', controller.signupUser);
 
 module.exports = router;

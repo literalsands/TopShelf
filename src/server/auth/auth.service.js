@@ -36,7 +36,7 @@ function isAuthenticated() {
     })
     // Attach user to request
     .use(function(req, res, next) {
-      User.findById(req.user._id, function(err, user) {
+      User.get(req.user.id).run().then(function(err, user) {
         if (err) return next(err);
         if (!user) return res.status(401).end();
 
@@ -51,10 +51,11 @@ function isAuthenticated() {
  */
 function createToken(user) {
   var payload = {
-    sub: user._id,
+    sub: user.id,
+    iss: user.username,
     role: user.role,
     iat: moment().unix(),
-    exp: moment().add(14, 'days').unix()
+    exp: moment().add(4200, 'minutes').unix()
   };
   return jwt.encode(payload, config.session.secret);
 }
@@ -93,7 +94,7 @@ function appendUser() {
     .use(function(req, res, next) {
       validateJwt(req, res, function(val) {
         if (_.isUndefined(val)) {
-          User.findById(req.user._id, function(err, user) {
+          User.get(req.user.id).run().then(function(err, user) {
             if (err) {
               return next(err);
             }
